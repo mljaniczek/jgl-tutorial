@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Joint Graphical Lasso Tutorial"
 author: "Margaret Janiczek"
 date: "3/27/2022"
 output: html_document
@@ -9,9 +9,15 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Load Data and Packages
+In this tutorial I walk through the steps needed to run Joint Graphical Lasso (Danaher, Wang, Witten 2011), using the `JGL` package and metabolomics data provided by Raji Balasubramanian. 
 
-```{r}
+Use of tutorial is intended for Biostat PhD seminar 892a presentation on 4/1/2022. 
+
+All code is available on my [GitHub](github.com/mljaniczek)!
+
+Thank you to Kate Shutta and Yukun Li who provided code for the pretty circular network graphs. 
+
+```{r message = FALSE, warning=FALSE, include=FALSE}
 #install.packages("JGL")
 #install.packages("JointNets")
 #install.packages("tidyverse")
@@ -20,20 +26,26 @@ library(JGL)
 library(JointNets) # for plotting JGL results 
 library(igraph)
 library(tidyverse)
-source(here::here("code/helper_functions.R"))
-theme_set(theme_bw())
+library(igraph)
+library(RColorBrewer)
+library(pheatmap)
+source(here::here("code/visualize.r")) #contains functions I made using code from Kate and Yukun 
+theme_set(theme_bw()) #setting ggplot theme 
 
-# read in data from Raji
+# read in metabolomics data from Raji
 dat <- read.csv(here::here("data/hapo_metabolomics_2020.csv"))
 ```
 
-The data consists of id, K = 4 ancestry groups (n = 400 each), and metabolites (p = 51 features). There is also a variable "fpg" which is fasting plasma glucose, I will omit that for now. 
+# Data Processing
 
-Let's first prepare the data by centering and scaling each metabolite feature (within class). 
+The data consists of ID variable, ancestry group, and metabolites (p = 51 features). The ancestry groups (K = 4) are balanced (n = 400 each, with 1600 total observations).There is also a variable "fpg" which is fasting plasma glucose, which I omit from this analysis. 
 
 ```{r}
+# examine ancestry group variable
 summary(as.factor(dat$anc_gp))
 ```
+
+## Center and Scale Data within Class
 
 We can see that the raw data has different distributions, but assumptions of JGL need data to be centered and scaled. 
 
@@ -44,26 +56,52 @@ summary(dat$mt1_1)
 summary(dat$mt2_1)
 summary(dat$mt3_1)
 
-hist(dat$mt1_1)
-hist(dat$mt2_1)
-hist(dat$mt3_1)
 ```
+
+Center and scale each metabolite feature, to satisfy assumptions of JGL. 
 
 
 ```{r}
 
 # prepare data into list of K datasets
 
-# make data into long format then center and scale by metabolite and group. 
+# make data into long format then center and scale by metabolite
+
+## we do not want to center and scale within each group because that would remove any signal we see, right? 
+
 dat_long <- dat %>%
   select(-fpg) %>%
   pivot_longer(cols = starts_with("mt"),
                names_to = "metabolite",
                values_to = "value",
                values_drop_na = TRUE) %>%
-  group_by(anc_gp, metabolite) %>%
+  group_by(metabolite) %>%
   mutate(scaled_value = scale(value, center = TRUE, scale = TRUE)) %>%
   ungroup()
+
+head(dat_long)
+```
+
+
+```{r}
+
+dat_long %>% 
+  filter(metabolite %in% c("mt1_1")) %>%
+  ggplot(aes(x=value, color=anc_gp)) +
+    geom_density()+
+  facet_grid(metabolite ~.)
+
+dat_long %>% 
+  filter(metabolite %in% c("mt2_1")) %>%
+  ggplot(aes(x=value, color=anc_gp)) +
+    geom_density()+
+  facet_grid(metabolite ~.)
+
+dat_long %>% 
+  filter(metabolite %in% c("mt3_1")) %>%
+  ggplot(aes(x=value, color=anc_gp)) +
+    geom_density()+
+  facet_grid(metabolite ~.)
 
 dat_long %>% 
   filter(metabolite %in% c("mt1_1", "mt2_1", "mt3_1")) %>%
@@ -101,6 +139,41 @@ str(dat_mat_list)
 
 So now we have a list of 4 matrices, each with 400 standardized observations of 51 metabolites. 
 
+## Heatmap to visualize the processed data
+
+Let's visualize the processed data quick in a heatmap to get an idea of if the data has any patterns. 
+
+Here the x axis has the 1600 samples, sorted by ancestry group. 
+The y axis has the 51 metabolites, clustered using hierarchical clustering, and with a color label based on metabolite group (there are 3 "groups" in the data, with suffix mt1, mt2, and mt3). 
+
+```{r heatmap}
+met_wide_all <- dat_long %>% 
+  #select(-c(anc_gp, value)) %>%
+  select(-value) %>%
+                      pivot_wider(names_from = metabolite, 
+                                  values_from = scaled_value,
+                                  #for simplicity putting 0 as missing values. Normally should do imputation.
+                                  values_fill = 0) %>%
+  arrange(anc_gp)
+
+#make matrix
+met_wide_all_mat <- t(as.matrix(met_wide_all%>%
+  select(-c(id, anc_gp))))
+met_wide_all_mat[is.na(met_wide_all_mat)] <- 0
+colnames(met_wide_all_mat) <- met_wide_all$id
+
+my_sample_col <- data.frame(ancestry = as.factor(met_wide_all$anc_gp))
+rownames(my_sample_col) <- met_wide_all$id
+
+met_group <- str_split_fixed(rownames(met_wide_all_mat), "_", 2)[,1]
+my_sample_row <- data.frame(met_group = met_group)
+row.names(my_sample_row) <- row.names(met_wide_all_mat)
+
+pheatmap(met_wide_all_mat, cluster_cols = FALSE, show_colnames = FALSE, show_rownames = TRUE, annotation_col = my_sample_col,
+         annotation_row = my_sample_row)
+```
+
+
 We can get to joint graphical lasso now! 
 
 ```{r}
@@ -108,61 +181,84 @@ fgl_results = JGL(Y = dat_mat_list,
                   penalty = "fused",
                   lambda1 = .08,
                   lambda2 = 0.02,
-                  return.whole.theta = TRUE)
+                  return.whole.theta = FALSE)
 
 str(fgl_results)
 print.jgl(fgl_results)
-
-test <- graph_from_adjacency_matrix(fgl_results$theta[[1]],
-                                    mode = "undirected")
-
-test <- simplify(test)
-
-plot.igraph(test,
-            #vertex.label=colnames(mx.1),
-            layout=layout.fruchterman.reingold)
-
-p <- dim(fgl_results$theta[[i]])[1]
-        new_mat <- matrix(unlist(est_graph$theta[i]),p,p)
-        adj_mat <- matrix(0,p,p)
-        adj_mat[which( new_mat!= 0)] <- 1
-        gr <- graph_from_adjacency_matrix(adj_mat,mode="undirected", weighted=NULL, diag=FALSE)
-
-
 ```
 
 
 ```{r}
-## load an example dataset with K=two classes, p=200 features, and n=100 samples per class:
-data(example.data)
-str(example.data)
-## run fgl:
-fgl.results = JGL(Y=example.data,penalty="fused",lambda1=.25,lambda2=.1)
-str(fgl.results)
-print.jgl(fgl.results)
+# extract all estimated covariance matrices from result
+inv_covar_matrices <- fgl_results$theta
+names(inv_covar_matrices) <- ancestry_groups
 
-test <- graph_from_adjacency_matrix(fgl.results$theta[[1]],
-                                    mode = "undirected")
+#now use function from igraph to create igraph graphs from adjacency matrices
 
-test <- simplify(test)
+graph_list <- map(ancestry_groups,
+                  ~graph_from_adjacency_matrix(
+                    -cov2cor(inv_covar_matrices[[.x]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  ))
+names(graph_list) <- ancestry_groups
 
-plot.igraph(test,
-            #vertex.label=colnames(mx.1),
-            layout=layout.fruchterman.reingold)
+plot.igraph(graph_list[["ag1"]],
+            layout = layout.fruchterman.reingold)
 
-## run ggl:
-ggl.results = JGL(Y=example.data,penalty="group",lambda1=.15,lambda2=.2,return.whole.theta=TRUE)
-str(ggl.results)
-print.jgl(ggl.results)
 
-test <- graph_from_adjacency_matrix(ggl.results$theta[[1]],
-                                    mode = "undirected")
+plot_jgl(graph_list[[1]], multiplier = 3)
+plot_jgl(graph_list[[2]], multiplier = 3)
+plot_jgl(graph_list[[3]], multiplier = 3)
+plot_jgl(graph_list[[4]], multiplier = 3)
 
-test <- simplify(test)
-plot.igraph(test,
-            #vertex.label=colnames(mx.1),
-            layout=layout.fruchterman.reingold)
+
 ```
 
+Now run ggl 
+
+```{r}
+## run ggl:
+ggl_results = JGL(Y=dat_mat_list,
+                  penalty="group",
+                  lambda1=.15,
+                  lambda2=.2,
+                  return.whole.theta=TRUE)
+str(ggl_results)
+print.jgl(ggl_results)
+
+# extract all estimated covariance matrices from result
+ggl_inv_covar_matrices <- ggl_results$theta
+names(ggl_inv_covar_matrices) <- ancestry_groups
+
+#now use function from igraph to create igraph graphs from adjacency matrices
+
+ggl_graph_list <- map(ancestry_groups,
+                  ~graph_from_adjacency_matrix(
+                    -cov2cor(ggl_inv_covar_matrices[[.x]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  ))
+names(ggl_graph_list) <- ancestry_groups
+
+
+plot_jgl(ggl_graph_list[[1]], multiplier = 3)
+plot_jgl(ggl_graph_list[[2]], multiplier = 3)
+plot_jgl(ggl_graph_list[[3]], multiplier = 3)
+plot_jgl(ggl_graph_list[[4]], multiplier = 3)
+
+
+```
+
+BUT what we've done so far we've had to pre-select the lambdas. 
+
+Let's instead do a 
+
+
+# References
+
+Patrick Danaher, Pei Wang and Daniela Witten (2011). The joint graphical lasso for inverse covariance estimation across multiple classes. http://arxiv.org/abs/1111.0324
 
 

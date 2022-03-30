@@ -1,3 +1,5 @@
+
+
 plot_network <- function(network_obj){
   plot(network_obj, jitter=TRUE, usearrows = FALSE, label=1:p,displaylabels=TRUE, mode = "circle")
 }
