@@ -1,2 +1,3 @@
-# jgl-tutorial
-Tutorial for using joint graphical lasso in R
+## JGL Tutorial
+
+mljaniczek.github.io/jgl-tutorial
