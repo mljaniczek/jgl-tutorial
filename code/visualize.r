@@ -45,4 +45,21 @@ makePrettyGraphFromGraph = function(thisGraph, multiplier = 15,redblue=T)
 radian.rescale <- function(x, start=0, direction=1) {
   c.rotate <- function(x) (x + start) %% (2 * pi) * direction
   c.rotate(scales::rescale(x, c(0, 2 * pi), range(x)))
+}
+
+vBIC <- function(X, est_graph, thr=0.001){
+  num <- length(X)
+  BIC_acc <- 0.
+  for(i in 1:num){
+    
+    data_num <- dim(X[[i]])[1]
+    sample_cov <- cov(X[[i]], X[[i]])
+    tr_sum <- sum(diag(sample_cov %*% est_graph$theta[[i]]))
+    
+    log_det <- determinant(est_graph$theta[[i]], logarithm = TRUE)$modulus[1][1]
+    
+    E <- sum(sum(abs(est_graph$theta[[i]]) >= thr))
+    BIC_acc <- BIC_acc + (tr_sum - log_det) + (log(data_num)*E/data_num)
   }
+  return(BIC_acc)
+}
