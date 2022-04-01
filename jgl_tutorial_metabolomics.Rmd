@@ -50,7 +50,7 @@ library(tidyverse)
 library(igraph)
 library(RColorBrewer)
 library(pheatmap)
-#source(here::here("helper_functions.r")) #contains functions I made using code from Kate and Yukun and one function from Koyeje lab GitHub for tuning
+#source(here::here("helper_functions.r")) #contains functions I made using code from Kate and Yukun and one function from Koyej0 lab GitHub for tuning. To make it easier for users I pasted the functions below in a code chunk. 
 theme_set(theme_bw()) #setting ggplot theme 
 
 # read in metabolomics data from Raji, which is on the github for this tutorial
@@ -103,7 +103,10 @@ radian.rescale <- function(x, start=0, direction=1) {
   c.rotate(scales::rescale(x, c(0, 2 * pi), range(x)))
 }
 
-# this function from Koyoje Lab Github
+# this function from Koyejo Lab Github https://github.com/koyejo-lab/JointGraphicalLasso
+# input is list of matrices same as you would put into `JGL` function, as well as results of `JGL`
+# output is AIC for particular estimated graph.
+# use this function when tuning lambdas
 vBIC <- function(X, est_graph, thr=0.001){
   num <- length(X)
   BIC_acc <- 0.
@@ -125,10 +128,9 @@ vBIC <- function(X, est_graph, thr=0.001){
 
 ## Acknowledgements
 
-Thank you to Raji Balasubramanian for the metabolomics data, which was previously presented at ENAR 2021.
+Thank you to Dr. Raji Balasubramanian for the metabolomics data, which was previously presented at ENAR 2021 with Dr. Denise Scholtens. 
 
-Thank you to Kate Shutta and Yukun Li who provided code for the beautiful circular network graphs. 
-
+Thank you to Dr. Kate Hoff Shutta and Yukun Li who provided code for the beautiful circular network graphs. 
 
 
 # Joint Graphical Lasso Overview
@@ -137,7 +139,14 @@ Thank you to Kate Shutta and Yukun Li who provided code for the beautiful circul
 
 * We previously discussed details of graphical lasso to estimate precision matrix for Gaussian Graphical Models (GGMs) as in Yuan and Lin (2007) and Friedman et al (2007).  
 
+* We should be familiar with this convex optimization problem for graphical lasso at this point, where $\lambda$ is a tuning parameter and $||\Theta||_1$ is the sum of absolute values of the elements of $\Theta$. The solution gives an estimate for $\Sigma^{-1}$, the precision matrix:
+
+$$maximize_\Theta\{logdet\Theta - tr(S\Theta) - \lambda||\Theta||_1\}$$
+* Reminder that this *graphical lasso* can be used even when $p >> n$, and when $\lambda$ is large then it forces the estimated precision matrix to be sparse (so few edges!).
+
 * Joint graphical lasso builds upon this by estimating *multiple, related GGMs* from data with observations belonging to distinct classes (for example, cancer vs normal tissue). 
+
+* The idea is to leverage information across the classes while still letting there be class-specific edges. The level of resulting sparsity, and just how similar the resulting graphs are, can be modified by the use of two different penalty functions, and two tuning parameters.  
 
 * There are two types of penalty functions we can use within JGL which will adjust how much information to leverage across the classes. 
 
@@ -166,13 +175,28 @@ $$Y^{(k)}_1, ..., Y^{(k)}_{nk} \sim N(0, \Sigma_k)$$
 
 * Our goal is to estimate $\Sigma^{-1}_1$, ..., $\Sigma^{-1}_K$ by using penalized log-likelihood approach. 
 
+        * Again, we want each class to have it's own precision matrix, but to be able to use information across the classes to make them. 
+
 * Seek {$\hat{\Theta}$} by solving:
 
-$$maximize_{\{\Theta\}}\left(\sum^{K}_{k=1}n_k[log\{det(\theta^{(k)}\}-tr(S^{(k)}\Theta^{(k)}) - P(\{\Theta\})\right)$$
+$$maximize_{\{\Theta\}}\left(\sum^{K}_{k=1}n_k[log\{det(\Theta^{(k)})\}-tr(S^{(k)}\Theta^{(k)}) - P(\{\Theta\})\right)$$
 
 * A **major innovation of this paper**, is the generalization of the optimization problem to multiple classes, in addition to using the penalty function $P(\{\Theta\})$, for which the authors provide two different versions. 
 
+
 ## Penalty functions
+
+* The general form for the penalty function is:
+
+$$P(\{\Theta\}) = \lambda_1\sum^K_{k=1}\sum_{i \neq j}|\theta^{(k)}_{ij}| + \widetilde{P}\{\Theta\}$$
+
+* Notice that the $P(\{\Theta\})$ is **not class specific**. It takes information from all the classes!! 
+
+* The form of this penalty function will encourage the solutions to share certain characteristics such as locations of sparsity or value. 
+
+* Depending on the form we choose and the value of the tuning parameters, we could essentially force joint graphical lasso to just perform unrelated graphical lasso on each of the $K$ classes (i.e. if $\widetilde{P}\{\Theta\}$ is zero.)
+
+* Let's look at the possible forms for $\widetilde{P}\{\Theta\}$!
 
 ### Fused Graphical Lasso
 
@@ -523,6 +547,8 @@ The below chunk is one example where they use the following process:
 * Built final model with tuned parameters. 
 
 You can use this method with both fused or group penalty. 
+
+**Danaher et al note that this 2D grid search can be really computationally expensive! If you have large $p$ then you can keep $\lambda_2$ constant and search for best $\lambda_1$, then use that input to search for $\lambda_2$.**
 
 ### Example tuning lambdas with metabolomics data using GGL
 
