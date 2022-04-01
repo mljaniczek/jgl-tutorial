@@ -35,15 +35,9 @@ To run this tutorial on your computer please either clone the entire repository 
 
 You can alternatively download the .csv and .Rmd files [here](github.com/mljaniczek/jgl-tutorial-data) and run the script after installing appropriate packages (below, first code chunk).
 
-## Acknowledgements
-
-Thank you to Raji Balasubramanian for the metabolomics data, which was previously presented at ENAR 2021.
-
-Thank you to Kate Shutta and Yukun Li who provided code for the beautiful circular network graphs. 
 
 
-
-```{r load_data_packages, message = FALSE, warning=FALSE, include=FALSE, class.source = "fold.show"}
+```{r load_data_packages, message = FALSE, warning=FALSE, include=TRUE}
 # if you are missing any of the packages please install them before proceeding:
 
 #install.packages("JGL")
@@ -127,6 +121,14 @@ vBIC <- function(X, est_graph, thr=0.001){
   return(BIC_acc)
 }
 ```
+
+
+## Acknowledgements
+
+Thank you to Raji Balasubramanian for the metabolomics data, which was previously presented at ENAR 2021.
+
+Thank you to Kate Shutta and Yukun Li who provided code for the beautiful circular network graphs. 
+
 
 
 # Joint Graphical Lasso Overview
