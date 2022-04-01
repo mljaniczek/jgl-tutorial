@@ -1,5 +1,10 @@
 ---
 title: "Joint Graphical Lasso Tutorial"
+knit: (function(input_file, encoding) {
+    out_dir <- 'docs';
+    rmarkdown::render(input_file,
+      encoding=encoding,
+      output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 subtitle: "Presentation for UMass Amherst PhD Biostat Seminar 892a"
 author: "Margaret Janiczek, Ariane Stark"
 date: "4/1/2022"
@@ -17,27 +22,31 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction 
 
-This tutorial will summarise details of the Joint Graphical Lasso (JGL) (Danaher, Wang, Witten 2011) algorithm, then walk through the steps needed to run the `JGL` package with metabolomics data provided by Raji Balasubramanian. 
+This tutorial will summarize details of the Joint Graphical Lasso (JGL) algorithm (Danaher et. al 2011), then walk through the steps needed to run the `JGL` package using a real-world metabolomics dataset. 
 
-Use of tutorial is intended for Biostat PhD seminar 892a presentation on 4/1/2022. 
+Code throughout the document is "hidden" but if you click on "CODE" in the upper right above any R output, you can expand it to view code and (extensive) comments!
 
-All code is available on my [GitHub](github.com/mljaniczek). Please see this [link]([github.com/starkari/JGL-S22-Presentation) for Ariane Stark's companion presentation which contains further elaboration on results presented in the Danaher paper. 
+All code is available on my [GitHub](github.com/mljaniczek). Please see this [link]([github.com/starkari/JGL-S22-Presentation) for Ariane Stark's companion presentation which contains further elaboration on results presented in the Danaher paper.
+
+## Acknowledgements
+
+Thank you to Raji Balasubramanian for the metabolomics data, which was previously presented at ENAR 2021.
 
 Thank you to Kate Shutta and Yukun Li who provided code for the beautiful circular network graphs. 
-
-Code throughout the document is "hidden" but if you click on "CODE" in the upper right above any R output, you can examine the code!
 
 # Joint Graphical Lasso Overview
 
 ## Background
 
-* In our last seminar we learned details of graphical lasso to estimate precision matrix for Gaussian Graphical Models (GGMs). 
+* We previously discussed details of graphical lasso to estimate precision matrix for Gaussian Graphical Models (GGMs) as in Yuan and Lin (2007) and Friedman et al (2007).  
 
 * Joint graphical lasso builds upon this by estimating *multiple, related GGMs* from data with observations belonging to distinct classes (for example, cancer vs normal tissue). 
 
-* There are two types of penalties we can use within JGL. 
+* There are two types of penalty functions we can use within JGL which will adjust how much information to leverage across the classes. 
 
 * Additionally, the algorithm uses a fast alternating directions method of multipliers. 
+
+* Danaher paper has almost 800 citations as of March 2022.
 
 ## Notation
 
@@ -87,15 +96,21 @@ $$P(\{\Theta\}) = \lambda_1\sum^K_{k=1}\sum_{i \neq j}|\theta^{(k)}_{ij}| + \lam
 * Lasso penalty applied to elements of the precision matrices  
 * Group lasso penalty is applied to the (i, j) element across all K precision matrices
 * When $\lambda_1$ is **large**, GGL makes sparse estimates of $\hat{\Theta}^{(1)}, ... , \hat{\Theta}^{(K)}$ 
-* When $\lambda_2$ is **large**, many elements of $\hat{\Theta}^{(1)}, ... , \hat{\Theta}^{(K)}$ will be the same across classes  
-* So, GGL just encourages a shared pattern of sparsity, not shared edge values (unlike FGL which encourages both)
-
-## When to use JGL
+* So, GGL just encourages a shared pattern of *sparsity*, not shared *edge values* (unlike FGL which encourage sharing across both)
 
 
 
+# Application of JGL to metabolomics dataset
 
-```{r message = FALSE, warning=FALSE, include=FALSE}
+## Data Processing
+
+Data comes from Hyperglycemia and Adverse Pregnancy Outcome (HAPO) Study. Metabolites were measured from blood samples taken from pregnant women from four ancestry groups: Afro-Caribbean, Mexican American, Northern European, and Thai. 
+
+The data consists of ID variable, ancestry group, and metabolites (p = 51 features). The ancestry groups (K = 4) are balanced (n = 400 each, with 1600 total observations).There is also a variable "fpg" which is fasting plasma glucose, which I omit from this analysis. 
+
+Within the data there are three groups of metabolites: Amino Acids, Acycl carnitines, and Other.
+
+```{r load_data_packages, message = FALSE, warning=FALSE, include=FALSE}
 #install.packages("JGL")
 #install.packages("JointNets")
 #install.packages("tidyverse")
@@ -113,11 +128,6 @@ theme_set(theme_bw()) #setting ggplot theme
 # read in metabolomics data from Raji
 dat <- read.csv(here::here("data/hapo_metabolomics_2020.csv"))
 ```
-
-# Application of JGL to metabolomics dataset
-## Data Processing
-
-The data consists of ID variable, ancestry group, and metabolites (p = 51 features). The ancestry groups (K = 4) are balanced (n = 400 each, with 1600 total observations).There is also a variable "fpg" which is fasting plasma glucose, which I omit from this analysis. 
 
 ```{r}
 # examine ancestry group variable
@@ -243,7 +253,10 @@ colnames(met_wide_all_mat) <- met_wide_all$id
 my_sample_col <- data.frame(ancestry = as.factor(met_wide_all$anc_gp))
 rownames(my_sample_col) <- met_wide_all$id
 # then I want the rows annotated by metabolite group, we have three groups of metabolites mt1, mt2, mt3
-met_group <- str_split_fixed(rownames(met_wide_all_mat), "_", 2)[,1]
+met_group <- str_split_fixed(rownames(met_wide_all_mat), "_", 2)[,1] %>%
+  str_replace_all(c("mt1" = "Amino Acids",
+                  "mt2" = "Acyl carnitines",
+                  "mt3" = "Other"))
 my_sample_row <- data.frame(met_group = met_group)
 row.names(my_sample_row) <- row.names(met_wide_all_mat)
 
@@ -257,9 +270,9 @@ pheatmap(met_wide_all_mat,
 ```
 
 Here the x axis has the 1600 samples, sorted by ancestry group. 
-The y axis has the 51 metabolites, clustered using hierarchical clustering, and with a color label based on metabolite group (there are 3 "groups" in the data, with suffix mt1, mt2, and mt3). 
+The y axis has the 51 metabolites, clustered using hierarchical clustering, and with a color label based on metabolite group (there are 3 "groups" in the data, with suffix mt1, mt2, and mt3 which indicate Amino Acids, Acyl carnitines, and other groups respectively). 
 
-From this heatmap we can see there are big differences in the values for metabolite group 3 (pink) across the 4 ancestry groups. metabolites from group 1 and group 2 appear to be more homogenous across the classes.
+From this heatmap we can see there are big differences in the values for "Other" metabolite group (pink) across the 4 ancestry groups. metabolites from Amino Acids and Acyl Carnitines groups appear to be more homogeneous across the classes.
 
 Let's get to joint graphical lasso now! We will essentially be taking the data from each ancestry section and fitting graphical lasso, while also borrowing strength from the other classes which is a strength of the JGL. 
 
