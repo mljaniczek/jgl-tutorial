@@ -20,19 +20,114 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
+
 # Introduction 
 
-This tutorial will summarize details of the Joint Graphical Lasso (JGL) algorithm (Danaher et. al 2011), then walk through the steps needed to run the `JGL` package using a real-world metabolomics dataset. 
+This tutorial summarizes details of the Joint Graphical Lasso (JGL) algorithm (Danaher et. al 2011), then walks through the steps needed to run the `JGL` package using a real-world metabolomics dataset. 
 
+## Important Notes
 Code throughout the document is "hidden" but if you click on "CODE" in the upper right above any R output, you can expand it to view code and (extensive) comments!
 
-All code is available on my [GitHub](github.com/mljaniczek). Please see this [link]([github.com/starkari/JGL-S22-Presentation) for Ariane Stark's companion presentation which contains further elaboration on results presented in the Danaher paper.
+All code is available on my [GitHub](https://github.com/mljaniczek/jgl-tutorial). Please see this [link](https://github.com/starkari/JGL-S22-Presentation) for Ariane Stark's companion presentation which contains further elaboration on methods and results presented in the Danaher paper.
+
+To run this tutorial on your computer please either clone the entire repository to your computer, double click `jgl-torial.Rproj`, open the .Rmd file and run the code as is after making sure you have installed the appropriate packages in R (below). 
+
+You can alternatively download the .csv and .Rmd files [here](github.com/mljaniczek/jgl-tutorial-data) and run the script after installing appropriate packages (below, first code chunk).
 
 ## Acknowledgements
 
 Thank you to Raji Balasubramanian for the metabolomics data, which was previously presented at ENAR 2021.
 
 Thank you to Kate Shutta and Yukun Li who provided code for the beautiful circular network graphs. 
+
+
+
+```{r load_data_packages, message = FALSE, warning=FALSE, include=FALSE, class.source = "fold.show"}
+# if you are missing any of the packages please install them before proceeding:
+
+#install.packages("JGL")
+#install.packages("igraph", "RColorBrewer", "pheatmap")
+#install.packages("tidyverse", "here")
+
+library(JGL)
+library(igraph)
+library(tidyverse)
+library(igraph)
+library(RColorBrewer)
+library(pheatmap)
+#source(here::here("helper_functions.r")) #contains functions I made using code from Kate and Yukun and one function from Koyeje lab GitHub for tuning
+theme_set(theme_bw()) #setting ggplot theme 
+
+# read in metabolomics data from Raji, which is on the github for this tutorial
+#http://github.com/mljaniczek/jgl-tutorial
+dat <- read.csv("hapo_metabolomics_2020.csv")
+```
+
+```{r helper_functions}
+# this is a funciton I made using code received from Kate Shutta and Yukun Li.
+# Made this wrapper function to make the code within the tutorial document shorter.
+plot_jgl <- function(
+  thisGraph,
+  multiplier = 15,
+  vertex.size = 4,  
+  vertex.label.dist = 2 , 
+  vertex.label.cex = 0.5, 
+  rescale = F) {
+  myLayout =  layout_in_circle(makePrettyGraphFromGraph(thisGraph))*0.8
+  lab.locs <- radian.rescale(x=1:length(V(thisGraph)), direction=-1, start=0)
+  plot(makePrettyGraphFromGraph(thisGraph, multiplier = multiplier), 
+       vertex.size = vertex.size,  
+       vertex.label.dist = vertex.label.dist , 
+       vertex.label.cex = vertex.label.cex, 
+       vertex.label.color=V(thisGraph)$color, 
+       layout = myLayout,
+       lab.locs = lab.locs,
+       vertex.label.degree=lab.locs,
+       rescale=F)
+}
+
+# this is a function for making red-blue edges to match the edge weights(partial correlation)
+# you may need to adjust the multiplier depending on how strong your edges are
+# function from Kate and Yukun
+makePrettyGraphFromGraph = function(thisGraph, multiplier = 15,redblue=T)
+{
+  if(redblue == T) my_palette <- brewer.pal(n = 8, name = "RdBu")
+  if(redblue == F) my_palette <- brewer.pal(n = 8, name = "PRGn")
+  my_palette <- my_palette[8:1]
+  E(thisGraph)$width = abs(E(thisGraph)$weight)*multiplier
+  E(thisGraph)$color = ifelse(sign(E(thisGraph)$weight)>0,my_palette[1],my_palette[8])
+  return(thisGraph)
+}
+
+
+# this is code from this stack exchange: 
+# https://stackoverflow.com/questions/23209802/placing-vertex-label-outside-a-circular-layout-in-igraph
+
+radian.rescale <- function(x, start=0, direction=1) {
+  c.rotate <- function(x) (x + start) %% (2 * pi) * direction
+  c.rotate(scales::rescale(x, c(0, 2 * pi), range(x)))
+}
+
+# this function from Koyoje Lab Github
+vBIC <- function(X, est_graph, thr=0.001){
+  num <- length(X)
+  BIC_acc <- 0.
+  for(i in 1:num){
+    
+    data_num <- dim(X[[i]])[1]
+    sample_cov <- cov(X[[i]], X[[i]])
+    tr_sum <- sum(diag(sample_cov %*% est_graph$theta[[i]]))
+    
+    log_det <- determinant(est_graph$theta[[i]], logarithm = TRUE)$modulus[1][1]
+    
+    E <- sum(sum(abs(est_graph$theta[[i]]) >= thr))
+    BIC_acc <- BIC_acc + (tr_sum - log_det) + (log(data_num)*E/data_num)
+  }
+  return(BIC_acc)
+}
+```
+
 
 # Joint Graphical Lasso Overview
 
@@ -110,24 +205,7 @@ The data consists of ID variable, ancestry group, and metabolites (p = 51 featur
 
 Within the data there are three groups of metabolites: Amino Acids, Acycl carnitines, and Other.
 
-```{r load_data_packages, message = FALSE, warning=FALSE, include=FALSE}
-#install.packages("JGL")
-#install.packages("JointNets")
-#install.packages("tidyverse")
 
-library(JGL)
-library(JointNets) # for plotting JGL results 
-library(igraph)
-library(tidyverse)
-library(igraph)
-library(RColorBrewer)
-library(pheatmap)
-source(here::here("helper_functions.r")) #contains functions I made using code from Kate and Yukun and one function from Koyeje lab GitHub
-theme_set(theme_bw()) #setting ggplot theme 
-
-# read in metabolomics data from Raji
-dat <- read.csv(here::here("data/hapo_metabolomics_2020.csv"))
-```
 
 ```{r}
 # examine ancestry group variable
