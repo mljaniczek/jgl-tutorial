@@ -10,19 +10,24 @@ plot_jgl <- function(
   multiplier = 15,
   vertex.size = 4,  
   vertex.label.dist = 2 , 
-  vertex.label.cex = 0.5, 
-  rescale = F) {
+  vertex.label.cex = 0.5,
+  rescale = F,
+  vertex.color = NULL, 
+  vertex.label.color= NULL, 
+  main = NULL) {
   myLayout =  layout_in_circle(makePrettyGraphFromGraph(thisGraph))*0.8
   lab.locs <- radian.rescale(x=1:length(V(thisGraph)), direction=-1, start=0)
   plot(makePrettyGraphFromGraph(thisGraph, multiplier = multiplier), 
        vertex.size = vertex.size,  
        vertex.label.dist = vertex.label.dist , 
        vertex.label.cex = vertex.label.cex, 
-       vertex.label.color=V(thisGraph)$color, 
        layout = myLayout,
        lab.locs = lab.locs,
        vertex.label.degree=lab.locs,
-       rescale=F)
+       vertex.color = vertex.color,
+       vertex.label.color= vertex.label.color,
+       rescale=F, 
+       main = main)
 }
 
 # this is a function for making red-blue edges to match the edge weights(partial correlation)
