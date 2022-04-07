@@ -37,7 +37,7 @@ You can alternatively download the .csv and .Rmd files [here](github.com/mljanic
 
 
 
-```{r load_data_packages, message = FALSE, warning=FALSE, include=TRUE}
+```{r load_data_packages, message = FALSE, warning=FALSE, include=TRUE, collapse = FALSE}
 # if you are missing any of the packages please install them before proceeding:
 
 #install.packages("JGL")
@@ -53,14 +53,14 @@ library(pheatmap)
 #source(here::here("helper_functions.r")) #contains functions I made using code from Kate and Yukun and one function from Koyej0 lab GitHub for tuning. To make it easier for users I pasted the functions below in a code chunk. 
 theme_set(theme_bw()) #setting ggplot theme 
 
-# read in metabolomics data from Raji, which is on the github for this tutorial
+# read in metabolomics data from Raji Balasubramanian, which is on the github for this tutorial
 #http://github.com/mljaniczek/jgl-tutorial
 dat <- read.csv("hapo_metabolomics_2020.csv")
 ```
 
 ```{r helper_functions}
-# this is a funciton I made using code received from Kate Shutta and Yukun Li.
-# Made this wrapper function to make the code within the tutorial document shorter.
+# this is a function I made which incorporates code from Kate Shutta and Yukun Li.
+# input your prepared adjacency matrix (e.g. from graph_from_adjancency_matrix(JGL(...)$theta)) as well as any graphing parameters
 plot_jgl <- function(
   thisGraph,
   multiplier = 15,
@@ -70,7 +70,9 @@ plot_jgl <- function(
   rescale = F,
   vertex.color = NULL, 
   vertex.label.color= NULL, 
-  main = NULL) {
+  main = NULL,
+  #sub = NULL,
+  ...) {
   myLayout =  layout_in_circle(makePrettyGraphFromGraph(thisGraph))*0.8
   lab.locs <- radian.rescale(x=1:length(V(thisGraph)), direction=-1, start=0)
   plot(makePrettyGraphFromGraph(thisGraph, multiplier = multiplier), 
@@ -83,8 +85,11 @@ plot_jgl <- function(
        vertex.color = vertex.color,
        vertex.label.color= vertex.label.color,
        rescale=F, 
-       main = main)
+       main = main,
+       #sub = sub,
+       ...)
 }
+
 
 # this is a function for making red-blue edges to match the edge weights(partial correlation)
 # you may need to adjust the multiplier depending on how strong your edges are
@@ -383,9 +388,10 @@ pheatmap(met_wide_all_mat,
 Here the x axis has the 1600 samples, sorted by ancestry group. 
 The y axis has the 51 metabolites, clustered using hierarchical clustering, and with a color label based on metabolite group (there are 3 "groups" in the data, with suffix mt1, mt2, and mt3 which indicate Amino Acids, Acyl carnitines, and other groups respectively). 
 
-From this heatmap we can see there are big differences in the values for "Other" metabolite group (pink) across the 4 ancestry groups. metabolites from Amino Acids and Acyl Carnitines groups appear to be more homogeneous across the classes.
+From this heatmap we can see there are big differences in the values for "Other" metabolite group (pink) across the 4 ancestry groups. metabolites from Amino Acids and Acyl Carnitines groups appear to be more homogeneous across the classes. 
 
 Let's get to joint graphical lasso now! We will essentially be taking the data from each ancestry section and fitting graphical lasso, while also borrowing strength from the other classes which is a strength of the JGL. 
+
 
 ## Apply Joint Graphical Lasso
 
@@ -398,7 +404,7 @@ We will first go over some basic results using preset values for lambda1 and lam
 
 We use the `JGL()` function from the `JGL` package, with `penalty = "fused"` specified. 
 
-For now we are just putting in a preselected value for lambda1 and lambda2, but in a later section we will go over methods to tune the parameters. 
+*Note: For now we are just putting in a pre-selected value for lambda1 and lambda2, but in a later section we will go over methods to tune the parameters.*
 
 ```{r run_fgl}
 fgl_results = JGL(Y = dat_mat_list,
@@ -411,13 +417,14 @@ str(fgl_results) # the theta contains a list of estimated matrices, one for each
 print.jgl(fgl_results)
 ```
 
-The basic code itself is simple, although the package does not come with easy-to-use visualization functions. The following contains a frankenstein mix of code I borrowed from online and from colleagues (thank you Kate and Yukun again!!). 
+The basic code itself is simple, although the package does not come with easy-to-use visualization functions. The following code chunks contains a frankenstein mix of code I borrowed from online and from colleagues (thank you Kate and Yukun again!!). 
 
-* Extract the estimated covariance matrices from the `JGL()` result  
-* Use `graph_from_adjacency_matrix()` function from the `igraph` package on each of the K estimated covariance matrices  
-* Either use `plot.igraph()` and tweak inputs to make a nice graph, or you can use the cobbled-together code that was passed down from Kate to Yukun to me, each of us has tweeked it slightly to how we like it! I have made the function `plot_jgl()` in the companion script `visualize.r` which is available in my GitHub along with this presentation.  
+Here is the basic strategy for plotting the output of `JGL()`:
 
-By examining the below graphs we can see that the estimated networks, especially for the strong correlations, is largely similar across the four groups. 
+* Extract the estimated $K$ covariance matrices from the `JGL()` result 
+* Use `graph_from_adjacency_matrix()` function from the `igraph` package on each of the $K$ estimated covariance matrices  
+* Either use `plot.igraph()` and tweak inputs to make a nice graph, or you can use the cobbled-together code that was passed down from Kate to Yukun to me. Each of us has tweaked it slightly to how we like it! I have made the function `plot_jgl()` in the companion script `visualize.r` which is available in my GitHub along with this presentation.  
+
 
 ```{r visualize_fgl}
 # extract all estimated covariance matrices from result
@@ -444,7 +451,7 @@ names(graph_list) <- ancestry_groups
 # or can use function I made from Kate/Yukun's code to make a pretty circular graph
 #plot_jgl(graph_list[[1]], multiplier = 3)
 
-# specify colors for groups of metabolites 
+# specify colors for vertices (groups of metabolites in our case)
 
 color_opts <- RColorBrewer::brewer.pal(3, "Dark2")
 color_list <- data.frame(class = met_group) %>%
@@ -456,9 +463,12 @@ color_list <- data.frame(class = met_group) %>%
     )
   )
 
+# color and labels for edges
+edge_palette <- brewer.pal(n = 8, name = "RdBu")[c(8,1)]
+edge_labels <- c("Positive", "Negative")
 ```
 
-```{r indiv_test_graph}
+```{r indiv_test_graph, include = FALSE, eval = FALSE}
 # individual graph for testing
 
 test_graph <- graph_from_adjacency_matrix(
@@ -480,6 +490,7 @@ color_list <- data.frame(class = met_group) %>%
     TRUE ~ NA_character_
     )
   )
+
 igraph.options(annotate.plot = TRUE,
                print.edge.attributes = TRUE)
 plot(makePrettyGraphFromGraph(test_graph, multiplier = 5), 
@@ -495,6 +506,7 @@ plot(makePrettyGraphFromGraph(test_graph, multiplier = 5),
      main = "Class 1")
 ```
 
+By examining the below graphs we can see that the estimated networks, especially for the strong correlations, are largely similar across the four groups. 
 
 #### FGL Class 1
 
@@ -504,24 +516,49 @@ plot_jgl(graph_list[[1]], multiplier = 3,
          vertex.color = color_list$color,
          vertex.label.color = color_list$color,
          main = "Class 1, FGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### FGL Class 2
 
 ```{r}
-plot_jgl(graph_list[[2]], multiplier = 3)
+plot_jgl(graph_list[[2]],  multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 2, FGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### FGL Class 3
 
 ```{r}
-plot_jgl(graph_list[[3]], multiplier = 3)
+plot_jgl(graph_list[[3]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 3, FGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### FGL Class 4
 
 ```{r}
-plot_jgl(graph_list[[4]], multiplier = 3)
+plot_jgl(graph_list[[4]],  multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 4, FGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 
 ```
 
@@ -529,7 +566,7 @@ plot_jgl(graph_list[[4]], multiplier = 3)
 
 ### Using Group Graphical Lasso penalty {.tabset}
 
-Now run "group" penalty instead in `JGL()` function. Same procedure as above except with `penalty = "group"` as input. 
+Now let's run "group" penalty instead in `JGL()` function. Same procedure as above except with `penalty = "group"` as input. 
 
 ```{r run_ggl}
 ## run ggl:
@@ -568,38 +605,66 @@ names(ggl_graph_list) <- ancestry_groups
 
 ```{r}
 
-plot_jgl(ggl_graph_list[[1]], multiplier = 3)
+plot_jgl(ggl_graph_list[[1]],  multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 1, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### GGL Class 2
 
 ```{r}
-plot_jgl(ggl_graph_list[[2]], multiplier = 3)
+plot_jgl(ggl_graph_list[[2]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 2, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### GGL Class 3
 
 ```{r}
-plot_jgl(ggl_graph_list[[3]], multiplier = 3)
+plot_jgl(ggl_graph_list[[3]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 3, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### GGL Class 4
 
 ```{r}
-plot_jgl(ggl_graph_list[[4]], multiplier = 3)
+plot_jgl(ggl_graph_list[[4]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 4, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 
 ```
-
-BUT what we've done so far we've had to pre-select the lambdas. 
-
-Let's show how we would input an assortment of lambdas and tune those parameters. 
 
 
 ## Tuning parameters
 
+What we've done so far we've had to pre-select the lambdas. 
+
+Let's show how we would input an assortment of lambdas and tune those parameters!
+
 I found the [Koyejo Lab GitHub repository](https://github.com/koyejo-lab/JointGraphicalLasso) full of code to assist with different methods to select parameters for JGL. 
 
-The below chunk is one example where they use the following process:
+They use the following process:
 
 * Do a 2D grid search over a sequence of possible values for lambda1 and lambda2, run `JGL()` for each  
 * Collect Akaike Information Criterion (AIC) for each combination  
@@ -610,9 +675,217 @@ You can use this method with both fused or group penalty.
 
 **Danaher et al note that this 2D grid search can be really computationally expensive! If you have large $p$ then you can keep $\lambda_2$ constant and search for best $\lambda_1$, then use that input to search for $\lambda_2$.**
 
+### What do those lambdas do anyways??? {.tabset}
+
+As we described above, having small lambda 1... while having lambda 2 close to zero...
+
+When lambda1 is high...
+
+When lambda2 is high...
+
+```{r}
+lambda.eff <- c(0.01, 0.75)
+aic_vec <- matrix(NA, length(lambda.eff),length(lambda.eff))
+fits <- NULL
+
+lowlow <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[1],lambda2=lambda.eff[1], return.whole.theta=TRUE)
+test1 <- vBIC(dat_mat_list, lowlow, thr=0.0001)
+paste("AIC for low lambda1 low lambda2:", round(test1, 2))
+lowlowgraph <- graph_from_adjacency_matrix(
+                    -cov2cor(lowlow$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+lowhigh <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[1],lambda2=lambda.eff[2], return.whole.theta=TRUE)
+test2 <- vBIC(dat_mat_list, lowhigh, thr=0.0001)
+paste("AIC for low lambda1 high lambda2:", round(test2, 2))
+lowhighgraph <- graph_from_adjacency_matrix(
+                    -cov2cor(lowhigh$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+
+highlow <- JGL(Y=dat_mat_list,penalty="group",lambda1=0.5,lambda2=lambda.eff[1], return.whole.theta=TRUE)
+test3 <- vBIC(dat_mat_list, highlow, thr=0.0001)
+paste("AIC for high lambda1 low lambda2:", round(test3, 2))
+highlowgraph <- graph_from_adjacency_matrix(
+                    -cov2cor(highlow$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+
+highhigh <- JGL(Y=dat_mat_list,penalty="group",lambda1=0.4,lambda2=0.5, return.whole.theta=TRUE)
+test4 <- vBIC(dat_mat_list, highhigh, thr=0.0001)
+paste("AIC for high lambda1 high lambda2:", round(test4, 2))
+highhighgraph <- graph_from_adjacency_matrix(
+                    -cov2cor(highhigh$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+
+# #search grid of lambdas
+# for(i in 1:length(lambda.eff)){
+#     for(j in 1:length(lambda.eff)){
+#         fit00 <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[i],lambda2=lambda.eff[j], return.whole.theta=TRUE)
+#         aic_vec[i,j] <- vBIC(dat_mat_list, fit00, thr=0.0001)
+#         fits[[length(fits + 1)]] <- fit00
+#    }
+# }
+```
+
+#### GGL Small lambda1 Small lambda2
+
+```{r}
+plot_jgl(lowlowgraph,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "GGL small lambda1 small lambda2",
+         sub = paste("AIC", round(test1, 2))
+         )
+```
+
+#### GGL Small lambda1 Large lambda2
+
+```{r}
+plot_jgl(lowhighgraph,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "GGL small lambda1 large lambda2",
+         sub = paste("AIC", round(test2, 2)))
+```
+
+#### GGL Large lambda1 Small lambda2
+
+```{r}
+plot_jgl(lowhighgraph,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "GGL large lambda1 small lambda2",
+         sub = paste("AIC", round(test3, 2)))
+```
+
+#### GGL Large lambda1 Large lambda2
+
+```{r}
+plot_jgl(highhighgraph,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "FGL large lambda1 large lambda2",
+         sub = paste("AIC", round(test4, 2)))
+```
+
+
+```{r}
+
+lowlow_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=lambda.eff[1],lambda2=lambda.eff[1], return.whole.theta=TRUE)
+test1_f <- vBIC(dat_mat_list, lowlow_f, thr=0.0001)
+lowlowgraph_f <- graph_from_adjacency_matrix(
+                    -cov2cor(lowlow_f$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+lowhigh_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=lambda.eff[1],lambda2=lambda.eff[2], return.whole.theta=TRUE)
+test2_f <- vBIC(dat_mat_list, lowhigh_f, thr=0.0001)
+lowhighgraph_f <- graph_from_adjacency_matrix(
+                    -cov2cor(lowhigh_f$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+
+highlow_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=0.5,lambda2=lambda.eff[1], return.whole.theta=TRUE)
+test3_f <- vBIC(dat_mat_list, highlow_f, thr=0.0001)
+highlowgraph_f <- graph_from_adjacency_matrix(
+                    -cov2cor(highlow_f$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+
+highhigh_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=0.4,lambda2=0.5, return.whole.theta=TRUE)
+test4_f <- vBIC(dat_mat_list, highhigh_f, thr=0.0001)
+highhighgraph_f <- graph_from_adjacency_matrix(
+                    -cov2cor(highhigh_f$theta[[1]]),
+                    weighted = T,
+                    mode = "undirected",
+                    diag = FALSE
+                  )
+
+
+# #search grid of lambdas
+# for(i in 1:length(lambda.eff)){
+#     for(j in 1:length(lambda.eff)){
+#         fit00 <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[i],lambda2=lambda.eff[j], return.whole.theta=TRUE)
+#         aic_vec[i,j] <- vBIC(dat_mat_list, fit00, thr=0.0001)
+#         fits[[length(fits + 1)]] <- fit00
+#    }
+# }
+```
+
+#### FGL Small lambda1 Small lambda2
+
+```{r}
+plot_jgl(lowlowgraph_f,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "FGL small lambda1 small lambda2",
+         sub = paste("AIC", round(test1_f, 2)))
+```
+
+#### FGL Small lambda1 Large lambda2
+
+```{r}
+plot_jgl(lowhighgraph_f,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "FGL small lambda1 large lambda2",
+         sub = paste("AIC", round(test2_f, 2)))
+```
+
+#### FGL Large lambda1 Small lambda2
+
+```{r}
+plot_jgl(highlowgraph_f,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "FGL large lambda1 small lambda2",
+         sub = paste("AIC", round(test3_f, 2)))
+```
+
+#### FGL Large lambda1 Large lambda2
+
+```{r}
+plot_jgl(highhighgraph_f,
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         multiplier = 3,
+         main = "FGL large lambda1 large lambda2",
+         sub = paste("AIC", round(test4_f, 2)))
+```
+
+
 ### Example tuning lambdas using 2D grid search with metabolomics data using GGL
 
-Below I'm making a very small 3x3 grid of lambdas for run-time demonstration purposes (it takes my computer less than a minute, but timing went up substantially when I added a larger grid). 
+Below I'm making a very small 3x3 grid of lambdas for run-time demonstration purposes (it takes my computer less than a minute, but timing went up substantially when I added a larger grid and my computer crashed). 
 
 ```{r}
 interval_l = 3
@@ -633,6 +906,7 @@ which(aic_vec == min(aic_vec), arr.ind = TRUE)
 
 ```
 
+Below visualizes the AIC in our grid search.
 
 ```{r visualize_tuning}
 
@@ -641,7 +915,7 @@ image(x=lambda.eff,y=lambda.eff,z=aic_vec,
 contour(x=lambda.eff,y=lambda.eff,z=aic_vec, add = TRUE,nlevels = 10)
 ```
 
-Identify lambda combination with lowest AIC (visualized above). 
+Finally, identify lambda combination with lowest AIC. 
 
 ```{r tuned_lambda}
 # identify which had min aic
@@ -656,7 +930,7 @@ lam_2 <- lambda.eff[j_idx]
 
 ### Example tuning parameters computationally faster
 
-Here I am demonstrating how to tune lambda1 keeping lambda2 constant, then using that lambda1 to tune lambda2, as the authors suggest if doing 2D grid search is computationally prohibitive. 
+Here I am demonstrating how to tune lambda1 by keeping lambda2 constant, then using that lambda1 to tune lambda2, as the authors suggest if doing 2D grid search is computationally prohibitive. 
 
 ```{r}
 interval_l = 10
@@ -689,7 +963,6 @@ lam_2 <- lambda.eff[j_idx]
 
 
 ```
-
 
 
 ### Run JGL again with tuned parameters {.tabset}
@@ -728,34 +1001,121 @@ names(graph_list) <- ancestry_groups
 
 ```{r}
 
-plot_jgl(graph_list[[1]], multiplier = 3)
+plot_jgl(graph_list[[1]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 1, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### Tuned GGL Class 2
 
 ```{r}
-plot_jgl(graph_list[[2]], multiplier = 3)
+plot_jgl(graph_list[[2]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 2, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### Tuned GGL Class 3
 
 ```{r}
-plot_jgl(graph_list[[3]], multiplier = 3)
+plot_jgl(graph_list[[3]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 3, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 ```
 
 #### Tuned GGL Class 4
 
 ```{r}
-plot_jgl(graph_list[[4]], multiplier = 3)
+plot_jgl(graph_list[[4]], multiplier = 3, 
+         vertex.color = color_list$color,
+         vertex.label.color = color_list$color,
+         main = "Class 4, GGL")
+legend("bottomleft", inset=.02, title="Metabolite class",
+   unique(color_list$class), fill=color_opts, cex=0.8)
+legend("topleft", inset=.02, title="Edge",
+   edge_labels, fill=edge_palette, cex=0.8)
 
 ```
 
 
-What I take from these networks is that there appear to be dense edges within the metabolite classes, and fewer cross-class edges although there are a few. 
+
+What I take from these networks is that there appear to be dense edges within the metabolite classes, and fewer cross-class edges although there are a few. This makes sense with what we saw in our data exploration heatmap.
+
+### Identifying shared and unique edges
+
+```{r message = FALSE, warning = FALSE}
+# test <- E(graph_list$ag1)
+# test2 <- E(graph_list$ag2)
+# 
+# test_dif <- difference(graph_list$ag2, graph_list$ag1)
+# E(test_dif)
+# 
+# test_intersect <- intersect(E(graph_list$ag1), E(graph_list$ag2))
+
+test_edge1 <- as.data.frame(get.edgelist(graph_list$ag1))
+
+test_edge2 <- as.data.frame(get.edgelist(graph_list$ag2))
+
+test_edge3 <- as.data.frame(get.edgelist(graph_list$ag3))
+
+test_edge4 <- as.data.frame(get.edgelist(graph_list$ag4))
+
+shared_edges <- inner_join(test_edge1, test_edge2) %>%
+  inner_join(test_edge3) %>%
+  inner_join(test_edge4)
+
+unique1 <- anti_join(test_edge1, test_edge2) %>%
+  anti_join(test_edge3) %>%
+  anti_join(test_edge4)
+
+unique2 <- anti_join(test_edge2, test_edge1) %>%
+  anti_join(test_edge3) %>%
+  anti_join(test_edge4)
+
+unique3 <- anti_join(test_edge3, test_edge1) %>%
+  anti_join(test_edge2) %>%
+  anti_join(test_edge4)
+
+unique4 <- anti_join(test_edge4, test_edge1) %>%
+  anti_join(test_edge2) %>%
+  anti_join(test_edge3)
+
+```
+
+There are `r length(shared_edges[,1])` common shared edges across all 4 ancestry groups. There are `r length(unique1[,1])` edges unique to ancestry group 1, `r length(unique2[,1])` edges unique to ancestry group 2,  `r length(unique3[,1])` edges unique to ancestry group 3, and  `r length(unique4[,1])` edges unique to ancestry group 4. 
 
 
 # References
 
 Patrick Danaher, Pei Wang and Daniela Witten (2011). The joint graphical lasso for inverse covariance estimation across multiple classes. http://arxiv.org/abs/1111.0324
+
+Raji Balasubramanian, Denise Scholtens (2021). ENAR Conference Presentation. *(Metabolomics dataset and description)*
+
+Koyejo Lab JGL
+
+## Packages and resources used to create this tutorial
+
+[igraph](https://igraph.org/): for plotting network graphs
+[JGL](https://cran.r-project.org/package=JGL): for running Joint Graphical Lasso
+[tidyverse](https://www.tidyverse.org/): for data wrangling 
+[RColorBrewer](https://cran.r-project.org/package=RColorBrewer): for pretty color palettes
+pheatmap: My favorite heatmap package, makes the heatmaps with annotated tracks
+(See this [blog post](https://davetang.org/muse/2018/05/15/making-a-heatmap-in-r-with-the-pheatmap-package/) by Dave Tang for a nice tutorial on using this package.)
+
+Site built using [GitHub pages](https://pages.github.com/) and RMarkdown. See [here](https://happygitwithr.com/rstudio-git-github.html) for Jenny Bryant's guide to using Git and Rmarkdown. 
 
 
