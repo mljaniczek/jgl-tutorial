@@ -235,27 +235,25 @@ $$P(\{\Theta\}) = \lambda_1\sum^K_{k=1}\sum_{i \neq j}|\theta^{(k)}_{ij}| + \lam
 
 # Application of JGL to metabolomics dataset
 
-## Data Processing
-
+## Data description
 Data comes from Hyperglycemia and Adverse Pregnancy Outcome (HAPO) Study. Metabolites were measured from blood samples taken from pregnant women from four ancestry groups: Afro-Caribbean, Mexican American, Northern European, and Thai. 
 
 The data consists of ID variable, ancestry group, and metabolites (p = 51 features). The ancestry groups (K = 4) are balanced (n = 400 each, with 1600 total observations).There is also a variable "fpg" which is fasting plasma glucose, which I omit from this analysis. 
 
 Within the data there are three groups of metabolites: Amino Acids, Acycl carnitines, and Other.
 
-
+Here's what the raw data look like:
 
 ```{r}
 # examine ancestry group variable
-summary(as.factor(dat$anc_gp))
+#summary(as.factor(dat$anc_gp))
+
+head(dat)[,1:10]
 ```
 
-### Center and Scale Data within Class
-
-We can see that the raw data has different distributions, but assumptions of JGL need data to be centered and scaled. 
+We can take a look at a few of the metabolites to get an idea of distribution and missingness.
 
 ```{r}
-head(dat)[,1:10]
 
 summary(dat$mt1_1)
 summary(dat$mt2_1)
@@ -263,8 +261,12 @@ summary(dat$mt3_1)
 
 ```
 
-Center and scale each metabolite feature, to satisfy assumptions of JGL. 
+## Data Processing
 
+### Center and Scale Data within Class
+Assumptions of JGL need data to be centered and scaled so we must center and scale each metabolite feature, to satisfy assumptions of JGL. 
+
+Here I am making the data into "long" format and standardizing each metabolite separately. Check out how the data look now:
 
 ```{r data_long}
 
@@ -287,6 +289,7 @@ dat_long <- dat %>%
 head(dat_long)
 ```
 
+Now we can check on how the distribution of a few of the variables look now. Data looks roughly normal. Values of metabolites in class 3 ("Other") appear to have variable mean between ancestry groups. 
 
 ```{r density_plots}
 # if you want to look at one metabolite
@@ -305,7 +308,7 @@ dat_long %>%
 
 ```
 
-### Make *K* *n* by *p* matrices
+### Make *K* *n* by *p* matrices and deal with missingness
 
 Now the raw data is centered and scaled! But first we need to get it into *K* *n* by *p* matrices as required by the `JGL` package. 
 
@@ -395,9 +398,9 @@ Let's get to joint graphical lasso now! We will essentially be taking the data f
 
 ## Apply Joint Graphical Lasso
 
-Danaher et. al wrote the R package `JGL` as companion to their paper. There are two penalty functions for `lambda2` described in the paper: **Fused Graphical Lasso (FGL)** and **Group Graphical Lasso (GGL)** penalties.
+Danaher et. al wrote the R package `JGL` as companion to their paper. As described above in Section 2.5, there are two penalty functions for `lambda2` described in the paper: **Fused Graphical Lasso (FGL)** and **Group Graphical Lasso (GGL)** penalties.
 
-We will first go over some basic results using preset values for lambda1 and lambda2 parameters, visualize the results, then discuss strategies for tuning the parameters.  
+We will first go over some basic results for both penalties using preset values for lambda1 and lambda2 parameters, visualize the results, then discuss strategies for tuning the parameters.  
 
 
 ### Using Fused Graphical Lasso penalty {.tabset}
@@ -423,7 +426,7 @@ Here is the basic strategy for plotting the output of `JGL()`:
 
 * Extract the estimated $K$ covariance matrices from the `JGL()` result 
 * Use `graph_from_adjacency_matrix()` function from the `igraph` package on each of the $K$ estimated covariance matrices  
-* Either use `plot.igraph()` and tweak inputs to make a nice graph, or you can use the cobbled-together code that was passed down from Kate to Yukun to me. Each of us has tweaked it slightly to how we like it! I have made the function `plot_jgl()` in the companion script `visualize.r` which is available in my GitHub along with this presentation.  
+* Either use `igraph::plot.igraph()` and tweak inputs to make a nice graph, or you can use the cobbled-together code that was passed down from Kate to Yukun to me. Each of us has tweaked it slightly to how we like it! I have made the function `plot_jgl()` in the companion script `helper_functions.r` which is available on my GitHub along with this presentation.  
 
 
 ```{r visualize_fgl}
@@ -506,7 +509,9 @@ plot(makePrettyGraphFromGraph(test_graph, multiplier = 5),
      main = "Class 1")
 ```
 
-By examining the below graphs we can see that the estimated networks, especially for the strong correlations, are largely similar across the four groups. 
+By examining the below graphs we can see that the estimated networks, especially for the strong correlations, are largely similar across the four groups, at least with this selection of lambdas. 
+
+**Click tabs below to see the graphs from the different ancestry groups**
 
 #### FGL Class 1
 
@@ -575,7 +580,7 @@ ggl_results = JGL(Y=dat_mat_list,
                   lambda1=.15,
                   lambda2=.2,
                   return.whole.theta=TRUE)
-str(ggl_results)
+#str(ggl_results)
 print.jgl(ggl_results)
 ```
 
@@ -587,7 +592,6 @@ ggl_inv_covar_matrices <- ggl_results$theta
 names(ggl_inv_covar_matrices) <- ancestry_groups
 
 #now use function from igraph to create igraph graphs from adjacency matrices
-
 ggl_graph_list <- map(ancestry_groups,
                   ~graph_from_adjacency_matrix(
                     -cov2cor(ggl_inv_covar_matrices[[.x]]),
@@ -655,33 +659,24 @@ legend("topleft", inset=.02, title="Edge",
 
 ```
 
-
-## Tuning parameters
-
-What we've done so far we've had to pre-select the lambdas. 
-
-Let's show how we would input an assortment of lambdas and tune those parameters!
-
-I found the [Koyejo Lab GitHub repository](https://github.com/koyejo-lab/JointGraphicalLasso) full of code to assist with different methods to select parameters for JGL. 
-
-They use the following process:
-
-* Do a 2D grid search over a sequence of possible values for lambda1 and lambda2, run `JGL()` for each  
-* Collect Akaike Information Criterion (AIC) for each combination  
-* Identify lambda combination with the lowest AIC  
-* Built final model with tuned parameters. 
-
-You can use this method with both fused or group penalty. 
-
-**Danaher et al note that this 2D grid search can be really computationally expensive! If you have large $p$ then you can keep $\lambda_2$ constant and search for best $\lambda_1$, then use that input to search for $\lambda_2$.**
-
 ### What do those lambdas do anyways??? {.tabset}
 
-As we described above, having small lambda 1... while having lambda 2 close to zero...
+As we described above, having large lambda 1 forces sparse solutions for both penalty functions.
 
-When lambda1 is high...
+When lambda2 is high in FGL it enforces similar values across classes (aggressive sharing of information). 
 
-When lambda2 is high...
+When lambda2 is high in GGL it enforces similar sparsity locations across classes, but does not enforce similar values.
+
+Let's look at the graphs below to see what different extreme values of lambda do in the metabolomics dataset. 
+
+Here I fit 4 models for each penalty function with the following combinations of lambdas:
+
+* Small lambda1 (0.01), small lambda2 (0.01)
+* Small lambda1 (0.01), large lambda2 (0.75)
+* Large lambda1 (0.5), small lambda2 (0.01)
+* Large lambda1 (0.5), large lambda2 (0.75)
+
+**When I went too high for lambda values they produced completely sparse graphs with no edges.
 
 ```{r}
 lambda.eff <- c(0.01, 0.75)
@@ -882,6 +877,27 @@ plot_jgl(highhighgraph_f,
          sub = paste("AIC", round(test4_f, 2)))
 ```
 
+## Tuning parameters
+
+In what we've done so far we've had to pre-select the lambdas. 
+
+Let's show how we would input an assortment of lambdas and tune those parameters!
+
+The [Koyejo Lab GitHub repository](https://github.com/koyejo-lab/JointGraphicalLasso) is full of code to assist with different methods to select parameters for JGL. 
+
+They use the following process:
+
+* Do a 2D grid search over a sequence of possible values for lambda1 and lambda2, run `JGL()` for each  
+* Collect Akaike Information Criterion (AIC) for each combination  
+* Identify lambda combination with the lowest AIC  
+* Built final model with tuned parameters. 
+
+You can use this method with both fused or group penalty. 
+
+**Danaher et al note that this 2D grid search can be really computationally expensive! If you have large $p$ then you can keep $\lambda_2$ constant and search for best $\lambda_1$, then use that input to search for $\lambda_2$.**
+
+
+
 
 ### Example tuning lambdas using 2D grid search with metabolomics data using GGL
 
@@ -964,12 +980,20 @@ lam_2 <- lambda.eff[j_idx]
 
 ```
 
-
-### Run JGL again with tuned parameters {.tabset}
+Here are the final tuned values for lambda1 and lambda2 using this method:
 
 ```{r}
 print(paste("lambda_1", lam_1))
 print(paste("lambda_2", lam_2))
+```
+
+
+
+### Run JGL again with tuned parameters {.tabset}
+
+Now lets run GGL again with those tuned lambdas. 
+
+```{r}
 
 ggl_tuned_results <- JGL(Y=dat_mat_list,
                   penalty="group",
@@ -982,8 +1006,6 @@ inv_covar_matrices <- ggl_tuned_results$theta
 names(inv_covar_matrices) <- ancestry_groups
 
 #now use `graph_from_adjacency_matrix()` function from igraph to create igraph graphs from adjacency matrices
-
-## TODO look up red brick 21
 
 #again since we have a list covariance matrices I use the map() function to apply igraph::graph_from_adjacency_matrix() over the list
 
