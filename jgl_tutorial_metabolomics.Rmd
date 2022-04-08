@@ -1023,46 +1023,38 @@ What I take from these networks is that there appear to be dense edges within th
 
 ### Identifying shared and unique edges
 
+I'm still learning about the kind of further analysis you would do after running JGL, but one common thing to do would be to identify which edges are shared across groups and which are unique. 
+
 ```{r message = FALSE, warning = FALSE}
-# test <- E(graph_list$ag1)
-# test2 <- E(graph_list$ag2)
-# 
-# test_dif <- difference(graph_list$ag2, graph_list$ag1)
-# E(test_dif)
-# 
-# test_intersect <- intersect(E(graph_list$ag1), E(graph_list$ag2))
 
-test_edge1 <- as.data.frame(get.edgelist(graph_list$ag1))
+# go through list and use igraph::get.edglist() function to grab matrix of edges
+test_edges <- map(graph_list, ~as.data.frame(get.edgelist(.)))
 
-test_edge2 <- as.data.frame(get.edgelist(graph_list$ag2))
+shared_edges <- inner_join(test_edges$ag1, test_edges$ag2) %>%
+  inner_join(test_edges$ag3) %>%
+  inner_join(test_edges$ag4)
 
-test_edge3 <- as.data.frame(get.edgelist(graph_list$ag3))
+#there's definitely a more efficient way to code this but I'm just slapping it together for now. Using anti_join() function to identify the unique match-ups of edges for each class compared to all others. 
 
-test_edge4 <- as.data.frame(get.edgelist(graph_list$ag4))
+unique1 <- anti_join(test_edges$ag1, test_edges$ag2) %>%
+  anti_join(test_edges$ag3) %>%
+  anti_join(test_edges$ag4)
 
-shared_edges <- inner_join(test_edge1, test_edge2) %>%
-  inner_join(test_edge3) %>%
-  inner_join(test_edge4)
+unique2 <- anti_join(test_edges$ag2, test_edges$ag1) %>%
+  anti_join(test_edges$ag3) %>%
+  anti_join(test_edges$ag4)
 
-unique1 <- anti_join(test_edge1, test_edge2) %>%
-  anti_join(test_edge3) %>%
-  anti_join(test_edge4)
+unique3 <- anti_join(test_edges$ag3, test_edges$ag1) %>%
+  anti_join(test_edges$ag2) %>%
+  anti_join(test_edges$ag4)
 
-unique2 <- anti_join(test_edge2, test_edge1) %>%
-  anti_join(test_edge3) %>%
-  anti_join(test_edge4)
-
-unique3 <- anti_join(test_edge3, test_edge1) %>%
-  anti_join(test_edge2) %>%
-  anti_join(test_edge4)
-
-unique4 <- anti_join(test_edge4, test_edge1) %>%
-  anti_join(test_edge2) %>%
-  anti_join(test_edge3)
+unique4 <- anti_join(test_edges$ag4, test_edges$ag1) %>%
+  anti_join(test_edges$ag2) %>%
+  anti_join(test_edges$ag4)
 
 ```
 
-There are `r length(shared_edges[,1])` common shared edges across all 4 ancestry groups. There are `r length(unique1[,1])` edges unique to ancestry group 1, `r length(unique2[,1])` edges unique to ancestry group 2,  `r length(unique3[,1])` edges unique to ancestry group 3, and  `r length(unique4[,1])` edges unique to ancestry group 4. 
+For this analysis, there are `r length(shared_edges[,1])` common shared edges across all 4 ancestry groups. There are `r length(unique1[,1])` edges unique to ancestry group 1, `r length(unique2[,1])` edges unique to ancestry group 2,  `r length(unique3[,1])` edges unique to ancestry group 3, and  `r length(unique4[,1])` edges unique to ancestry group 4. 
 
 From here collaborators might look into these unique or shared edges and their corresponding nodes for further hypothesis generation. You could also start to do some differential network analysis as Dr. Shutta presented in a previous seminar ([DINGO](https://academic.oup.com/bioinformatics/article/31/21/3413/195238)). 
 
