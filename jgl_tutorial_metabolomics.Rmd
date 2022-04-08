@@ -52,6 +52,7 @@ library(RColorBrewer)
 library(pheatmap)
 #source(here::here("helper_functions.r")) #contains functions I made using code from Kate and Yukun and one function from Koyej0 lab GitHub for tuning. To make it easier for users I pasted the functions below in a code chunk. 
 theme_set(theme_bw()) #setting ggplot theme 
+igraph_options(annotate.plot = TRUE) # setting default to annotate plot with number of vertices and edges
 
 # read in metabolomics data from Raji Balasubramanian, which is on the github for this tutorial
 #http://github.com/mljaniczek/jgl-tutorial
@@ -398,16 +399,16 @@ Let's get to joint graphical lasso now! We will essentially be taking the data f
 
 ## Apply Joint Graphical Lasso
 
-Danaher et. al wrote the R package `JGL` as companion to their paper. As described above in Section 2.5, there are two penalty functions for `lambda2` described in the paper: **Fused Graphical Lasso (FGL)** and **Group Graphical Lasso (GGL)** penalties.
+Danaher et. al wrote the R package `JGL` as companion to their paper. As described above in Section 2.5, there are two penalty functions described in the paper: **Fused Graphical Lasso (FGL)** and **Group Graphical Lasso (GGL)** penalties.
 
-We will first go over some basic results for both penalties using preset values for lambda1 and lambda2 parameters, visualize the results, then discuss strategies for tuning the parameters.  
+We will first go over some basic results for both penalties using preset values for $\lambda_1$ and $\lambda_2$ parameters, visualize the results, then discuss strategies for tuning the parameters.  
 
 
 ### Using Fused Graphical Lasso penalty {.tabset}
 
 We use the `JGL()` function from the `JGL` package, with `penalty = "fused"` specified. 
 
-*Note: For now we are just putting in a pre-selected value for lambda1 and lambda2, but in a later section we will go over methods to tune the parameters.*
+*Note: For now we are just putting in a pre-selected value for $\lambda_1$ and $\lambda_2$, but in a later section we will go over methods to tune the parameters.*
 
 ```{r run_fgl}
 fgl_results = JGL(Y = dat_mat_list,
@@ -661,221 +662,164 @@ legend("topleft", inset=.02, title="Edge",
 
 ### What do those lambdas do anyways??? {.tabset}
 
-As we described above, having large lambda 1 forces sparse solutions for both penalty functions.
+As we described above, having large $\lambda_1$ forces sparse solutions for both penalty functions.
 
-When lambda2 is high in FGL it enforces similar values across classes (aggressive sharing of information). 
+When $\lambda_2$ is high in FGL it enforces similar values across classes (aggressive sharing of information). 
 
-When lambda2 is high in GGL it enforces similar sparsity locations across classes, but does not enforce similar values.
+When $\lambda_2$ is high in GGL it enforces similar sparsity locations across classes, but does not enforce similar values.
 
 Let's look at the graphs below to see what different extreme values of lambda do in the metabolomics dataset. 
 
 Here I fit 4 models for each penalty function with the following combinations of lambdas:
 
-* Small lambda1 (0.01), small lambda2 (0.01)
-* Small lambda1 (0.01), large lambda2 (0.75)
-* Large lambda1 (0.5), small lambda2 (0.01)
-* Large lambda1 (0.5), large lambda2 (0.75)
+* Small $\lambda_1$ (0.01), small $\lambda_2$ (0.01)
+* Small $\lambda_1$ (0.01), large $\lambda_2$ (0.75)
+* Large $\lambda_1$ (0.5), small $\lambda_2$ (0.01)
+* Large $\lambda_1$ (0.5), large $\lambda_2$ (0.75)
 
 **When I went too high for lambda values they produced completely sparse graphs with no edges.
 
 ```{r}
+
 lambda.eff <- c(0.01, 0.75)
 aic_vec <- matrix(NA, length(lambda.eff),length(lambda.eff))
 fits <- NULL
 
-lowlow <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[1],lambda2=lambda.eff[1], return.whole.theta=TRUE)
-test1 <- vBIC(dat_mat_list, lowlow, thr=0.0001)
-paste("AIC for low lambda1 low lambda2:", round(test1, 2))
-lowlowgraph <- graph_from_adjacency_matrix(
-                    -cov2cor(lowlow$theta[[1]]),
+# function to make the plots I want below. input data, penalty type and lambdas.
+# made function to shorten code later.
+lambda_plots <- function(data, penalty = "group", lambda1, lambda2, ...){
+  res <- JGL(Y=data,
+                penalty=penalty,
+                lambda1=lambda1,
+                lambda2=lambda2, 
+                return.whole.theta=TRUE)
+  test1 <- vBIC(data, res, thr=0.0001)
+  resgraph <- graph_from_adjacency_matrix(
+                    -cov2cor(res$theta[[1]]),
                     weighted = T,
                     mode = "undirected",
                     diag = FALSE
                   )
+  resplot <- plot_jgl(resgraph,
+               multiplier = 3,
+               sub = paste("AIC", round(test1, 2)),
+               ...
+               )
+}
 
-lowhigh <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[1],lambda2=lambda.eff[2], return.whole.theta=TRUE)
-test2 <- vBIC(dat_mat_list, lowhigh, thr=0.0001)
-paste("AIC for low lambda1 high lambda2:", round(test2, 2))
-lowhighgraph <- graph_from_adjacency_matrix(
-                    -cov2cor(lowhigh$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-
-highlow <- JGL(Y=dat_mat_list,penalty="group",lambda1=0.5,lambda2=lambda.eff[1], return.whole.theta=TRUE)
-test3 <- vBIC(dat_mat_list, highlow, thr=0.0001)
-paste("AIC for high lambda1 low lambda2:", round(test3, 2))
-highlowgraph <- graph_from_adjacency_matrix(
-                    -cov2cor(highlow$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-
-highhigh <- JGL(Y=dat_mat_list,penalty="group",lambda1=0.4,lambda2=0.5, return.whole.theta=TRUE)
-test4 <- vBIC(dat_mat_list, highhigh, thr=0.0001)
-paste("AIC for high lambda1 high lambda2:", round(test4, 2))
-highhighgraph <- graph_from_adjacency_matrix(
-                    -cov2cor(highhigh$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-
-# #search grid of lambdas
-# for(i in 1:length(lambda.eff)){
-#     for(j in 1:length(lambda.eff)){
-#         fit00 <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[i],lambda2=lambda.eff[j], return.whole.theta=TRUE)
-#         aic_vec[i,j] <- vBIC(dat_mat_list, fit00, thr=0.0001)
-#         fits[[length(fits + 1)]] <- fit00
-#    }
-# }
 ```
 
-#### GGL Small lambda1 Small lambda2
-
-```{r}
-plot_jgl(lowlowgraph,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "GGL small lambda1 small lambda2",
-         sub = paste("AIC", round(test1, 2))
-         )
-```
-
-#### GGL Small lambda1 Large lambda2
-
-```{r}
-plot_jgl(lowhighgraph,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "GGL small lambda1 large lambda2",
-         sub = paste("AIC", round(test2, 2)))
-```
-
-#### GGL Large lambda1 Small lambda2
-
-```{r}
-plot_jgl(lowhighgraph,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "GGL large lambda1 small lambda2",
-         sub = paste("AIC", round(test3, 2)))
-```
-
-#### GGL Large lambda1 Large lambda2
-
-```{r}
-plot_jgl(highhighgraph,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "FGL large lambda1 large lambda2",
-         sub = paste("AIC", round(test4, 2)))
-```
-
+#### GGL Small $\lambda_1$ Small $\lambda_2$
 
 ```{r}
 
-lowlow_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=lambda.eff[1],lambda2=lambda.eff[1], return.whole.theta=TRUE)
-test1_f <- vBIC(dat_mat_list, lowlow_f, thr=0.0001)
-lowlowgraph_f <- graph_from_adjacency_matrix(
-                    -cov2cor(lowlow_f$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-lowhigh_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=lambda.eff[1],lambda2=lambda.eff[2], return.whole.theta=TRUE)
-test2_f <- vBIC(dat_mat_list, lowhigh_f, thr=0.0001)
-lowhighgraph_f <- graph_from_adjacency_matrix(
-                    -cov2cor(lowhigh_f$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-
-highlow_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=0.5,lambda2=lambda.eff[1], return.whole.theta=TRUE)
-test3_f <- vBIC(dat_mat_list, highlow_f, thr=0.0001)
-highlowgraph_f <- graph_from_adjacency_matrix(
-                    -cov2cor(highlow_f$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-
-highhigh_f <- JGL(Y=dat_mat_list,penalty="fused",lambda1=0.4,lambda2=0.5, return.whole.theta=TRUE)
-test4_f <- vBIC(dat_mat_list, highhigh_f, thr=0.0001)
-highhighgraph_f <- graph_from_adjacency_matrix(
-                    -cov2cor(highhigh_f$theta[[1]]),
-                    weighted = T,
-                    mode = "undirected",
-                    diag = FALSE
-                  )
-
-
-# #search grid of lambdas
-# for(i in 1:length(lambda.eff)){
-#     for(j in 1:length(lambda.eff)){
-#         fit00 <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[i],lambda2=lambda.eff[j], return.whole.theta=TRUE)
-#         aic_vec[i,j] <- vBIC(dat_mat_list, fit00, thr=0.0001)
-#         fits[[length(fits + 1)]] <- fit00
-#    }
-# }
+lambda_plots(data = dat_mat_list,
+             penalty = "group",
+             lambda = lambda.eff[1],
+             lambda2 = lambda.eff[1],
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "GGL small lambda1 small lambda2"
+             )
 ```
 
-#### FGL Small lambda1 Small lambda2
+#### GGL Small $\lambda_1$ Large $\lambda_2$
 
 ```{r}
-plot_jgl(lowlowgraph_f,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "FGL small lambda1 small lambda2",
-         sub = paste("AIC", round(test1_f, 2)))
+lambda_plots(data = dat_mat_list,
+             penalty = "group",
+             lambda = lambda.eff[1],
+             lambda2 = 0.75,
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "GGL small lambda1 large lambda2"
+             )
 ```
 
-#### FGL Small lambda1 Large lambda2
+#### GGL Large $\lambda_1$ Small $\lambda_2$
 
 ```{r}
-plot_jgl(lowhighgraph_f,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "FGL small lambda1 large lambda2",
-         sub = paste("AIC", round(test2_f, 2)))
+
+lambda_plots(data = dat_mat_list,
+             penalty = "group",
+             lambda = 0.4,
+             lambda2 = lambda.eff[1],
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "GGL large lambda1 small lambda2"
+             )
+
 ```
 
-#### FGL Large lambda1 Small lambda2
+#### GGL Large $\lambda_1$ Large $\lambda_2$
 
 ```{r}
-plot_jgl(highlowgraph_f,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "FGL large lambda1 small lambda2",
-         sub = paste("AIC", round(test3_f, 2)))
+lambda_plots(data = dat_mat_list,
+             penalty = "group",
+             lambda = 0.4,
+             lambda2 = 0.5,
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "GGL large lambda1 large lambda2"
+             )
 ```
 
-#### FGL Large lambda1 Large lambda2
+#### FGL Small $\lambda_1$ Small $\lambda_2$
 
 ```{r}
-plot_jgl(highhighgraph_f,
-         vertex.color = color_list$color,
-         vertex.label.color = color_list$color,
-         multiplier = 3,
-         main = "FGL large lambda1 large lambda2",
-         sub = paste("AIC", round(test4_f, 2)))
+
+lambda_plots(data = dat_mat_list,
+             penalty = "fused",
+             lambda = lambda.eff[1],
+             lambda2 = lambda.eff[1],
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "FGL small lambda1 small lambda2"
+             )
 ```
+
+#### FGL Small $\lambda_1$ Large $\lambda_2$
+
+```{r}
+lambda_plots(data = dat_mat_list,
+             penalty = "fused",
+             lambda = lambda.eff[1],
+             lambda2 = 0.75,
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "FGL small lambda1 large lambda2"
+             )
+```
+
+#### FGL Large $\lambda_1$ Small $\lambda_2$
+
+```{r}
+
+lambda_plots(data = dat_mat_list,
+             penalty = "fused",
+             lambda = 0.5,
+             lambda2 = lambda.eff[1],
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "FGL large lambda1 small lambda2"
+             )
+
+```
+
+#### FGL Large $\lambda_1$ Large $\lambda_2$
+
+```{r}
+lambda_plots(data = dat_mat_list,
+             penalty = "fused",
+             lambda = 0.5,
+             lambda2 = 0.75,
+             vertex.color = color_list$color,
+             vertex.label.color = color_list$color,
+             main = "FGL large lambda1 large lambda2"
+             )
+```
+
+Depending on your application you may want sparse results or dense results, or you may prefer tuning based on something like AIC, which we will go through next. 
 
 ## Tuning parameters
 
@@ -887,16 +831,14 @@ The [Koyejo Lab GitHub repository](https://github.com/koyejo-lab/JointGraphicalL
 
 They use the following process:
 
-* Do a 2D grid search over a sequence of possible values for lambda1 and lambda2, run `JGL()` for each  
+* Do a 2D grid search over a sequence of possible values for $\lambda_1$ and $\lambda_2$, run `JGL()` for each  
 * Collect Akaike Information Criterion (AIC) for each combination  
 * Identify lambda combination with the lowest AIC  
-* Built final model with tuned parameters. 
+* Build final model with tuned parameters. 
 
 You can use this method with both fused or group penalty. 
 
 **Danaher et al note that this 2D grid search can be really computationally expensive! If you have large $p$ then you can keep $\lambda_2$ constant and search for best $\lambda_1$, then use that input to search for $\lambda_2$.**
-
-
 
 
 ### Example tuning lambdas using 2D grid search with metabolomics data using GGL
@@ -905,7 +847,7 @@ Below I'm making a very small 3x3 grid of lambdas for run-time demonstration pur
 
 ```{r}
 interval_l = 3
-lambda.eff <- seq(0.01, 0.3, len = interval_l)
+lambda.eff <- seq(0.01, 0.4, len = interval_l)
 aic_vec <- matrix(NA, length(lambda.eff),length(lambda.eff))
 
 #search grid of lambdas
@@ -944,13 +886,15 @@ lam_2 <- lambda.eff[j_idx]
 
 ```
 
+But again, even with this relatively small dataset my computer didn't do well using this 2D grid search (perhaps I did something wrong!). So, I coded the below way of tuning one parameter at a time. 
+
 ### Example tuning parameters computationally faster
 
-Here I am demonstrating how to tune lambda1 by keeping lambda2 constant, then using that lambda1 to tune lambda2, as the authors suggest if doing 2D grid search is computationally prohibitive. 
+Here I am demonstrating how to tune $\lambda_1$ by holding $\lambda_2$ small and constant, then using that $\lambda_1$ to tune $\lambda_2$, as the authors suggest if doing 2D grid search is computationally prohibitive. 
 
 ```{r}
 interval_l = 10
-lambda.eff <- seq(0.01, 0.9, len = interval_l)
+lambda.eff <- seq(0.01, 0.4, len = interval_l)
 aic_vec1 <- matrix(NA, length(lambda.eff), 1) #for lambda1
 aic_vec2 <- matrix(NA, length(lambda.eff), 1) #for lambda2
 
@@ -980,7 +924,7 @@ lam_2 <- lambda.eff[j_idx]
 
 ```
 
-Here are the final tuned values for lambda1 and lambda2 using this method:
+Here are the final tuned values for $\lambda_1$ and $\lambda_2$ using this method:
 
 ```{r}
 print(paste("lambda_1", lam_1))
@@ -1120,6 +1064,8 @@ unique4 <- anti_join(test_edge4, test_edge1) %>%
 
 There are `r length(shared_edges[,1])` common shared edges across all 4 ancestry groups. There are `r length(unique1[,1])` edges unique to ancestry group 1, `r length(unique2[,1])` edges unique to ancestry group 2,  `r length(unique3[,1])` edges unique to ancestry group 3, and  `r length(unique4[,1])` edges unique to ancestry group 4. 
 
+From here collaborators might look into these unique or shared edges and their corresponding nodes for further hypothesis generation. You could also start to do some differential network analysis as Dr. Shutta presented in a previous seminar ([DINGO](https://academic.oup.com/bioinformatics/article/31/21/3413/195238)). 
+
 
 # References
 
@@ -1131,13 +1077,15 @@ Koyejo Lab JGL
 
 ## Packages and resources used to create this tutorial
 
-[igraph](https://igraph.org/): for plotting network graphs
-[JGL](https://cran.r-project.org/package=JGL): for running Joint Graphical Lasso
-[tidyverse](https://www.tidyverse.org/): for data wrangling 
-[RColorBrewer](https://cran.r-project.org/package=RColorBrewer): for pretty color palettes
-pheatmap: My favorite heatmap package, makes the heatmaps with annotated tracks
+* [igraph](https://igraph.org/): for plotting network graphs  
+* [JGL](https://cran.r-project.org/package=JGL): for running Joint Graphical Lasso  
+* [tidyverse](https://www.tidyverse.org/): for data wrangling   
+
+* [RColorBrewer](https://cran.r-project.org/package=RColorBrewer): for pretty color palettes
+
+* pheatmap: My favorite heatmap package, makes the heatmaps with annotated tracks
 (See this [blog post](https://davetang.org/muse/2018/05/15/making-a-heatmap-in-r-with-the-pheatmap-package/) by Dave Tang for a nice tutorial on using this package.)
 
-Site built using [GitHub pages](https://pages.github.com/) and RMarkdown. See [here](https://happygitwithr.com/rstudio-git-github.html) for Jenny Bryant's guide to using Git and Rmarkdown. 
+* I built the tutorial site using [GitHub pages](https://pages.github.com/) and RMarkdown. See [here](https://happygitwithr.com/rstudio-git-github.html) for Jenny Bryant's guide to using Git and Rmarkdown. 
 
 
