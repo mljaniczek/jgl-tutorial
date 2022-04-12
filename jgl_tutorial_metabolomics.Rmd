@@ -40,9 +40,9 @@ You can alternatively download the .csv and .Rmd files [here](github.com/mljanic
 ```{r load_data_packages, message = FALSE, warning=FALSE, include=TRUE, collapse = FALSE}
 # if you are missing any of the packages please install them before proceeding:
 
-#install.packages("JGL")
-#install.packages("igraph", "RColorBrewer", "pheatmap")
-#install.packages("tidyverse", "here")
+# install.packages("JGL")
+# install.packages("igraph", "RColorBrewer", "pheatmap")
+# install.packages("tidyverse", "here")
 
 library(JGL)
 library(igraph)
@@ -442,11 +442,16 @@ names(inv_covar_matrices) <- ancestry_groups
 graph_list <- map(ancestry_groups,
                   ~graph_from_adjacency_matrix(
                     -cov2cor(inv_covar_matrices[[.x]]),
-                    weighted = T,
+                    weighted = T, #want to weight edge by partial correlatioin
                     mode = "undirected",
                     diag = FALSE
                   ))
 names(graph_list) <- ancestry_groups
+
+# TODO add inverse z transform test
+# TODO get p value to test each edge 
+# TODO multiple testing adjustment
+# TODO take as final set of edges those that meet pvalue
 
 # can use the basic igraph code to plot
 # plot.igraph(graph_list[["ag1"]],
@@ -862,6 +867,9 @@ for(i in 1:length(lambda.eff)){
 min(aic_vec)
 which(aic_vec == min(aic_vec), arr.ind = TRUE)
 
+# TODO add cross validation step for more Robust selection
+# Training portion assume lambda1 lambda2 then calculate AIC in reserved testing
+
 ```
 
 Below visualizes the AIC in our grid search.
@@ -904,6 +912,8 @@ for(i in 1:length(lambda.eff)){
         fit00 <- JGL(Y=dat_mat_list,penalty="group",lambda1=lambda.eff[i],lambda2=lambda.eff[1], return.whole.theta=TRUE)
         aic_vec1[i,1] <- vBIC(dat_mat_list, fit00, thr=0.0001)
 }
+
+## TODO add cross validation for more robust tuning
 
 # identify which had min aic
 i_idx <- which(aic_vec1 == min(aic_vec1), arr.ind = TRUE)[1,1]
