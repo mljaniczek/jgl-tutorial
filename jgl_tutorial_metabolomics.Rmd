@@ -435,6 +435,9 @@ Here is the basic strategy for plotting the output of `JGL()`:
 inv_covar_matrices <- fgl_results$theta
 names(inv_covar_matrices) <- ancestry_groups
 
+
+test <- graph_from_adjacency_matrix(-cov2cor(inv_covar_matrices[[1]]))
+
 #now use `graph_from_adjacency_matrix()` function from igraph to create igraph graphs from adjacency matrices
 
 #again since we have a list covariance matrices I use the map() function to apply igraph::graph_from_adjacency_matrix() over the list
